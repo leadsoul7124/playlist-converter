@@ -1,113 +1,134 @@
 import React, { useState } from "react";
+import { useGoogleLogin } from "@react-oauth/google"; // Google OAuth hook
 import "./Converter.css";
 
-// Spotify 플레이리스트 데이터 가져오기
-const fetchSpotifyPlaylist = async (playlistLink) => {
+// 플랫폼별 플레이리스트 데이터 가져오기
+const fetchPlaylistData = async (sourcePlatform, playlistLink) => {
   try {
-    const playlistId = playlistLink.split("/").pop().split("?")[0]; // Spotify 플레이리스트 ID 추출
-    const apiUrl = `http://localhost:5001/spotify/playlist?id=${playlistId}`;
+    if (!playlistLink) throw new Error("Playlist link is missing.");
+    let apiUrl = "";
+
+    switch (sourcePlatform) {
+      case "spotify":
+        const playlistId = playlistLink.split("/").pop().split("?")[0]; // Spotify 플레이리스트 ID 추출
+        apiUrl = `http://localhost:5001/spotify/playlist?id=${playlistId}`;
+        break;
+      case "youtube":
+        throw new Error("YouTube as source platform is not yet supported.");
+      default:
+        throw new Error("Unsupported platform.");
+    }
+
     const response = await fetch(apiUrl);
 
-    if (!response.ok) throw new Error("Failed to fetch Spotify playlist data");
+    if (!response.ok) throw new Error("Failed to fetch playlist data");
 
-    return await response.json(); // Spotify API에서 받은 플레이리스트 데이터 반환
+    return await response.json(); // 플랫폼 API에서 받은 플레이리스트 데이터 반환
   } catch (error) {
     console.error(error);
-    alert("Spotify 플레이리스트를 가져오는 중 오류가 발생했습니다.");
+    alert("플레이리스트를 가져오는 중 오류가 발생했습니다.");
     return null;
   }
 };
 
 // Playlist 변환 API 호출
-const convertPlaylist = async (source, destination, playlistData) => {
-    if (!playlistData || !playlistData.tracks) {
-      console.error("Invalid playlist data:", playlistData);
-      alert("Playlist data is invalid.");
-      return null;
-    }
-  
-    try {
-      console.log("Sending playlist data for conversion:", playlistData);
-  
-      const apiUrl = "http://localhost:5001/convert";
-      const payload = {
-        sourcePlatform: source,
-        destinationPlatform: destination,
-        playlistData, // 플레이리스트 데이터를 그대로 전달
-      };
-  
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-  
-      if (!response.ok) throw new Error("Failed to convert the playlist");
-  
-      const result = await response.json();
-      console.log("Received converted links:", result);
-  
-      return result;
-    } catch (error) {
-      console.error("Error during playlist conversion:", error);
-      alert("Failed to convert playlist. Please try again.");
-      return null;
-    }
-  };
+const convertPlaylist = async (sourcePlatform, destinationPlatform, playlistData, googleAccessToken) => {
+  if (!playlistData || !playlistData.tracks) {
+    alert("Playlist data is invalid.");
+    return null;
+  }
+
+  try {
+    const apiUrl = "http://localhost:5001/convert";
+    const payload = {
+      sourcePlatform,
+      destinationPlatform,
+      playlistData,
+      googleAccessToken,
+    };
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) throw new Error("Failed to convert the playlist");
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error during playlist conversion:", error);
+    alert("Failed to convert playlist. Please try again.");
+    return null;
+  }
+};
 
 function Converter() {
   const [sourcePlatform, setSourcePlatform] = useState("");
-  const [destinationPlatform, setDestinationPlatform] = useState("");
+  const [destinationPlatform] = useState("youtube"); // YouTube로 변환 고정
   const [playlistLink, setPlaylistLink] = useState("");
   const [playlistData, setPlaylistData] = useState(null);
   const [convertedLink, setConvertedLink] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [googleAccessToken, setGoogleAccessToken] = useState(null); // Google Access Token
 
-  // Spotify 플레이리스트 가져오기
+  // Google 로그인
+  const handleGoogleLogin = useGoogleLogin({
+    scope: "https://www.googleapis.com/auth/youtube",
+    redirect_uri: "http://localhost:3000/oauth2callback", // 리디렉션 URI 명시
+    onSuccess: (tokenResponse) => {
+      console.log("Google login successful:", tokenResponse);
+      setGoogleAccessToken(tokenResponse.access_token);
+    },
+    onError: (error) => {
+      console.error("Google login failed:", error);
+      alert("Google login failed. Please try again.");
+    },
+  });
+
+  // 플레이리스트 데이터 가져오기
   const handleFetchPlaylist = async () => {
-    if (!playlistLink) {
-      alert("플레이리스트 링크를 입력해주세요.");
+    if (!sourcePlatform || !playlistLink) {
+      alert("Please select a source platform and provide a playlist link.");
       return;
     }
 
-    setIsLoading(true); // 로딩 상태 시작
+    setIsLoading(true);
     try {
-      const data = await fetchSpotifyPlaylist(playlistLink);
-      if (data) {
-        setPlaylistData(data); // 가져온 플레이리스트 데이터를 상태로 저장
-      }
+      const data = await fetchPlaylistData(sourcePlatform, playlistLink);
+      if (data) setPlaylistData(data);
     } catch (error) {
       console.error(error);
     } finally {
-      setIsLoading(false); // 로딩 상태 종료
+      setIsLoading(false);
     }
   };
 
   // Playlist 변환하기
   const handleConvertPlaylist = async () => {
-    if (!sourcePlatform || !destinationPlatform || !playlistData) {
-      alert("Please provide all required inputs.");
+    if (!sourcePlatform || !playlistData || !googleAccessToken) {
+      alert("Please complete all steps before converting.");
       return;
     }
-  
-    setIsLoading(true); // 로딩 상태 시작
+
+    setIsLoading(true);
     try {
-      console.log("Initiating playlist conversion...");
-      const result = await convertPlaylist(sourcePlatform, destinationPlatform, playlistData);
-  
-      if (result && result.convertedLinks) {
-        console.log("Converted links:", result.convertedLinks);
-        setConvertedLink(result.convertedLinks.join(", ")); // 여러 링크를 문자열로 결합
+      const result = await convertPlaylist(
+        sourcePlatform,
+        destinationPlatform,
+        playlistData,
+        googleAccessToken
+      );
+
+      if (result?.playlistUrl) {
+        setConvertedLink(result.playlistUrl);
       } else {
-        console.error("Failed to retrieve converted links.");
-        alert("Failed to retrieve converted links.");
+        alert("Failed to retrieve converted playlist.");
       }
     } catch (error) {
-      console.error("Error in handleConvertPlaylist:", error);
+      console.error("Error during playlist conversion:", error);
     } finally {
-      setIsLoading(false); // 로딩 상태 종료
+      setIsLoading(false);
     }
   };
 
@@ -116,45 +137,23 @@ function Converter() {
       <h1>Playlist Converter</h1>
 
       {/* Source Platform 선택 */}
-      <div className="converter-input-group">
-        <label className="converter-label">
-          Source Platform:{" "}
-          <select
-            value={sourcePlatform}
-            onChange={(e) => setSourcePlatform(e.target.value)}
-            className="converter-select"
-          >
-            <option value="">Select a platform</option>
-            <option value="spotify">Spotify</option>
-            <option value="youtube">YouTube</option>
-            <option value="apple-music">Apple Music</option>
-            <option value="tidal">Tidal</option>
-          </select>
-        </label>
-      </div>
-
-      {/* Destination Platform 선택 */}
-      <div className="converter-input-group">
-        <label className="converter-label">
-          Destination Platform:{" "}
-          <select
-            value={destinationPlatform}
-            onChange={(e) => setDestinationPlatform(e.target.value)}
-            className="converter-select"
-          >
-            <option value="">Select a platform</option>
-            <option value="spotify">Spotify</option>
-            <option value="youtube">YouTube</option>
-            <option value="apple-music">Apple Music</option>
-            <option value="tidal">Tidal</option>
-          </select>
-        </label>
+      <div className="converter-step">
+        <h2>1단계: Source Platform 선택</h2>
+        <select
+          value={sourcePlatform}
+          onChange={(e) => setSourcePlatform(e.target.value)}
+          className="converter-select"
+        >
+          <option value="">Select a source platform</option>
+          <option value="spotify">Spotify</option>
+          {/* 추후 다른 플랫폼 추가 가능 */}
+        </select>
       </div>
 
       {/* Playlist Link 입력 */}
-      <div className="converter-input-group">
-        <label className="converter-label">
-          Playlist Link:{" "}
+      {sourcePlatform && (
+        <div className="converter-step">
+          <h2>2단계: Playlist Link 입력</h2>
           <input
             type="text"
             value={playlistLink}
@@ -162,49 +161,46 @@ function Converter() {
             placeholder="Enter your playlist link"
             className="converter-input"
           />
-        </label>
-      </div>
+          <button
+            onClick={handleFetchPlaylist}
+            className="converter-button"
+            disabled={!playlistLink || isLoading}
+          >
+            {isLoading ? "Fetching..." : "Fetch Playlist"}
+          </button>
+        </div>
+      )}
 
-      {/* 플레이리스트 가져오기 버튼 */}
-      <button
-        onClick={handleFetchPlaylist}
-        className="converter-button"
-        disabled={isLoading}
-      >
-        {isLoading ? "Fetching..." : "Fetch Playlist"}
-      </button>
-
-      {/* 플레이리스트 정보 출력 */}
-      {playlistData && (
-        <div className="playlist-info">
-          <h3>Playlist: {playlistData.name}</h3>
-          <ul>
-            {playlistData.tracks.map((track, index) => (
-              <li key={index}>
-                {track.name} by {track.artist}
-              </li>
-            ))}
-          </ul>
+      {/* Google 로그인 */}
+      {playlistData && !googleAccessToken && (
+        <div className="converter-step">
+          <h2>3단계: Google 계정으로 로그인</h2>
+          <button onClick={handleGoogleLogin} className="converter-button">
+            Login with Google
+          </button>
         </div>
       )}
 
       {/* 변환 버튼 */}
-      {playlistData && (
-        <button
-          onClick={handleConvertPlaylist}
-          className="converter-button"
-          disabled={isLoading}
-        >
-          {isLoading ? "Converting..." : "Convert Playlist"}
-        </button>
+      {playlistData && googleAccessToken && (
+        <div className="converter-step">
+          <h2>4단계: YouTube로 변환</h2>
+          <button
+            onClick={handleConvertPlaylist}
+            className="converter-button"
+            disabled={isLoading}
+          >
+            {isLoading ? "Converting..." : "Convert Playlist"}
+          </button>
+        </div>
       )}
 
       {/* 변환된 링크 출력 */}
       {convertedLink && (
-        <div className="converter-link">
-          <h3>Converted Link:</h3>
+        <div className="converter-result">
+          <h3>Converted Playlist:</h3>
           <a href={convertedLink} target="_blank" rel="noopener noreferrer">
-            {convertedLink}
+            Open Playlist
           </a>
         </div>
       )}
