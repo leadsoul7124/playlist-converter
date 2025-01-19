@@ -27,3 +27,10 @@ Playlist Converter는 여러 음악 스트리밍 플랫폼(Spotify, YouTube Musi
 - Database: MongoDB
 
 - APIs: Spotify Web API,YouTube Data API v3 등 ...
+
+
+📞 Contact
+
+프로젝트에 대한 질문이 있거나 기여하고 싶다면, 다음 이메일로 문의해주세요:
+
+- Email: leadsoul7124@gmail.com
