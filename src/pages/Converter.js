@@ -171,6 +171,31 @@ function Converter() {
         </div>
       )}
 
+      {/* Fetch된 Playlist 데이터 표시 */}
+{playlistData && playlistData.tracks && playlistData.tracks.length > 0 && (
+  <div className="playlist-info">
+    <h2>Playlist Tracks</h2>
+    <table border="1" style={{ marginTop: "20px", width: "100%" }}>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Track Name</th>
+          <th>Artist</th>
+        </tr>
+      </thead>
+      <tbody>
+        {playlistData.tracks.map((track, index) => (
+          <tr key={index}>
+            <td>{index + 1}</td>
+            <td>{track.name}</td>
+            <td>{track.artist}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
+
       {/* Google 로그인 */}
       {playlistData && !googleAccessToken && (
         <div className="converter-step">
